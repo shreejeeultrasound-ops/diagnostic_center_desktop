@@ -1,0 +1,68 @@
+name: Build Windows Installer
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run automated test suite on Windows
+        run: pytest tests/ -v
+        env:
+          QT_QPA_PLATFORM: offscreen
+
+      - name: Build with PyInstaller
+        run: pyinstaller packaging/diagnostic_center.spec --noconfirm --clean
+
+      - name: Smoke-test the packaged executable launches
+        shell: pwsh
+        run: |
+          $env:APP_DATA_DIR = "$env:RUNNER_TEMP\diagnostic_center_smoke"
+          $proc = Start-Process -FilePath "dist\DiagnosticCenter\DiagnosticCenter.exe" -PassThru
+          Start-Sleep -Seconds 8
+          if ($proc.HasExited) {
+            Write-Error "Packaged application exited unexpectedly during smoke test."
+            exit 1
+          }
+          Stop-Process -Id $proc.Id -Force
+          if (-not (Test-Path "$env:RUNNER_TEMP\diagnostic_center_smoke\database\diagnostic_center.db")) {
+            Write-Error "Packaged application did not initialize its database on first run."
+            exit 1
+          }
+          Write-Host "Packaged .exe launched and initialized its database successfully."
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Compile Windows installer
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging\installer.iss
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DiagnosticCenter-Setup
+          path: dist_installer\*.exe
+
+      - name: Upload raw application folder
+        uses: actions/upload-artifact@v4
+        with:
+          name: DiagnosticCenter-App-Folder
+          path: dist\DiagnosticCenter\
