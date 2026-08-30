@@ -59,7 +59,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: DiagnosticCenter-Setup
-          path: dist_installer\*.exe
+          path: packaging/output/*.exe
 
       - name: Upload raw application folder
         uses: actions/upload-artifact@v4
